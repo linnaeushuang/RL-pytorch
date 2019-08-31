@@ -18,6 +18,7 @@ class agent():
         entropy_weight=0.0001,
         entropy_eps=1e-6,
         gamma=0.99,
+        lambd=0.997,
         train_mode=True):
 
         self.env=gym.make(scenario)
@@ -25,6 +26,7 @@ class agent():
         self.entropy_weight=entropy_weight
         self.entropy_eps=entropy_eps
         self.gamma=gamma
+        self.lambd=lambd
         self.train_mode=train_mode
         self.step_num=0
 
@@ -55,40 +57,44 @@ class agent():
         self.optimizer.zero_grad()
         states=torch.from_numpy(states).to(self.device)
         actions=torch.from_numpy(actions).to(self.device)
+        #--------new-----------
+        values=self.critic_net(states).squeeze(1)
+        R_batch=torch.from_numpy(rewards).to(self.device)
+        batch_size=rewards.shape[0]
+        returns=torch.Tensor(batch_size).to(self.device)
+        deltas=torch.Tensor(batch_size).to(self.device)
+        advantage=torch.Tensor(batch_size).to(self.device)
 
-        R_batch = torch.zeros(rewards.shape[0])
-        R_batch[-1]=rewards[-1]
-        for t in reversed(range(rewards.shape[0]-1)):
-            R_batch[t]=rewards[t]+self.gamma*R_batch[t+1]
-
-        # returns standardized
-        # R_batch=(R_batch-R_batch.mean())/(R_batch.std()+self.entropy_eps)
-
-
+        prev_return=0
+        prev_value=0
+        prev_advantage=0
         probs=self.actor_net(states)
         m=Categorical(probs)
         log_probs=m.log_prob(actions)
+        entropy_loss=m.entropy()
+        for i in reversed(range(batch_size)):
+            returns[i]=rewards[i]+self.gamma*prev_return
+            deltas[i]=rewards[i]+self.gamma*prev_value-values[i].data.numpy()
+            # ref: https://arxiv.org/pdf/1506.02438.pdf(GAE)
+            advantage[i]=deltas[i]+self.gamma*self.lambd*prev_advantage
 
-        s_values=self.critic_net(states).squeeze(1)
-
-        advantage=R_batch-s_values
-                
-
-        # see original paper,chapter 4
-        # we have not used gamma^k * v(s_{t+k})
-        actor_loss=torch.sum(log_probs*(-advantage)) # no entropy
-
-        critic_loss=self.loss_func(s_values,R_batch)
-
-        # backward together
-        loss=actor_loss+critic_loss
-
+            prev_return=returns[i]
+            prev_value=values[i].data.numpy()
+            prev_advantage=advantage[i]
+        advantage = (advantage - advantage.mean())/(advantage.std()+self.entropy_eps)
+        loss_policy=torch.mean(-log_probs*advantage)
+        loss_value=torch.mean((values-returns).pow(2))
+        loss=loss_policy+loss_value
         loss.backward()
+
         # gradinet clipping
         # https://pytorch.prg/docs/stable/nn.html#torch.nn.utils.clip_grad_norm_
         clip_grad_norm_(self.actor_net.parameters(),40)
         clip_grad_norm_(self.critic_net.parameters(),40)
         self.optimizer.step()
+        return loss.item()
+
+
 
     def train(self,num_episode):
         if not self.train_mode:
@@ -164,5 +170,5 @@ if __name__ =='__main__':
     np.random.seed(seed)
     torch.manual_seed(seed)
     train_agent=agent('CartPole-v0',seed=seed)
-    train_agent.train(300)
+    train_agent.train(600)
  
