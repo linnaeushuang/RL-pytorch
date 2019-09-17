@@ -18,7 +18,7 @@ class agent():
         entropy_weight=0.0001,
         entropy_eps=1e-6,
         gamma=0.99,
-        lambd=1,
+        lambd=0.997,
         train_mode=True):
 
         self.env=gym.make(scenario)
@@ -58,8 +58,8 @@ class agent():
         states=torch.from_numpy(states).to(self.device)
         actions=torch.from_numpy(actions).to(self.device)
         #--------new-----------
-        values=self.critic_net(states).squeeze(1)
-        R_batch=torch.from_numpy(rewards).to(self.device)
+        with torch.no_grad():
+            values=self.critic_net(states).squeeze(1)
         batch_size=rewards.shape[0]
         returns=torch.Tensor(batch_size).to(self.device)
         deltas=torch.Tensor(batch_size).to(self.device)
@@ -71,7 +71,6 @@ class agent():
         probs=self.actor_net(states)
         m=Categorical(probs)
         log_probs=m.log_prob(actions)
-        entropy_loss=m.entropy()
         for i in reversed(range(batch_size)):
             returns[i]=rewards[i]+self.gamma*prev_return
             deltas[i]=rewards[i]+self.gamma*prev_value-values[i].data.numpy()
@@ -83,7 +82,8 @@ class agent():
             prev_advantage=advantage[i]
         advantage = (advantage - advantage.mean())/(advantage.std()+self.entropy_eps)
         loss_policy=torch.mean(-log_probs*advantage)
-        loss_value=torch.mean((values-returns).pow(2))
+        s_values=self.critic_net(states).squeeze(1)
+        loss_value=torch.mean((s_values-returns).pow(2))
         loss=loss_policy+loss_value
         loss.backward()
 

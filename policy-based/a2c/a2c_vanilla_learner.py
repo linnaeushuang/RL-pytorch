@@ -69,7 +69,8 @@ class agent():
         m=Categorical(probs)
         log_probs=m.log_prob(actions)
 
-        s_values=self.critic_net(states).squeeze(1)
+        with torch.no_grad():
+            s_values=self.critic_net(states).squeeze(1)
 
         advantage=R_batch-s_values
                 
@@ -78,7 +79,8 @@ class agent():
         # we have not used gamma^k * v(s_{t+k})
         actor_loss=torch.sum(log_probs*(-advantage)) # no entropy
 
-        critic_loss=self.loss_func(s_values,R_batch)
+        values=self.critic_net(states).squeeze(1)
+        critic_loss=self.loss_func(values,R_batch)
 
         # backward together
         loss=actor_loss+critic_loss
