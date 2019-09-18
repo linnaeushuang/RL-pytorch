@@ -28,7 +28,7 @@ class ActorNetwork(nn.Module):
     def forward(self,inputs):
         out=F.relu(self.fc1(inputs),inplace=True)
         out=F.relu(self.fc2(out),inplace=True)
-        mean=self.action_mean(x)
+        mean=self.action_mean(out)
         sigma_log=self.sigma_log.expand_as(mean)
         sigma=torch.exp(sigma_log)
         return mean,sigma
