@@ -110,15 +110,87 @@ class Network(nn.Module):
         return self.output_layer(net)
 
 
+class Network2(nn.Module):
+    def __init__(self,input_dim,out_dim,lstm_size):
+        super(Network2,self).__init__()
+
+        self.batch_size=batch_size
+
+        self.fc1=nn.Linear(input_dim,128)
+        self.fc2=nn.Linear(128,lstm_size)
+        self.rnn=nn.LSTM(lstm_size,128,batch_first=True)
+
+        self.output_layer=nn.Linear(128,out_dim)
+        #self.h_train=torch.zeros(1,batch_size,128)
+        #self.c_train=torch.zeros(1,batch_size,128)
+
+        #self.h_selec=torch.zeros(1,1,128)
+        #self.c_selec=torch.zeros(1,1,128)
+
+        self._initialize()
+
+    def _initialize(self):
+        nn.init.xavier_uniform_(self.fc1.weight.data)
+        nn.init.constant_(self.fc1.bias.data,0.0)
+        nn.init.xavier_uniform_(self.fc2.weight.data)
+        nn.init.constant_(self.fc2.bias.data,0.0)
+        nn.init.xavier_uniform_(self.output_layer.weight.data)
+        nn.init.constant_(self.output_layer.bias.data,0.0)
+
+
+
+
+    def forward(self,inputs,h,c):
+
+        net=F.relu(self.fc1(inputs),inplace=True)
+        net=F.relu(self.fc2(net),inplace=True)
+
+
+        net,(new_h,new_c)=self.rnn(net,(h,c))
+
+        #print(net.shape) #[24,1,128]
+        net=net.squeeze()
+        #print(net.shape) #[24,128]
+        out=self.output_layer(net)
+        #print(out.shape) #[24,3]
+        return out,new_h,new_c
+
+
+
+
 if __name__ == '__main__':
+    '''
+    batch is numbers of episodes
+    seq_len is length of episode
+    if seq_len different,rnn output dim is different,so it is hard to input tensor to fc from rnn
+    '''
     batch_size=24
-    input_dim=16
+    seq_len=4
+    input_dim=2
     out_dim=3
-    net=Network(input_dim,out_dim,batch_size)
+    lstm_hidden_size=128
+    net=Network2(input_dim,out_dim,lstm_hidden_size)
     optim=torch.optim.Adam(net.parameters(),lr=0.005)
     loss_func=nn.MSELoss()
+    '''
     for i in range(24):
-        state=torch.randn(batch_size,input_dim).to(torch.float32)
-        action=net.forward(state)
-        print(action.shape)
+        state=torch.randn(batch_size,seq_len,input_dim).to(torch.float32)
+        h_init=torch.zeros(1,batch_size,lstm_hidden_size)
+        c_init=torch.zeros(1,batch_size,lstm_hidden_size)
+        _,_=net.forward(state,h_init,c_init)
+        #print(action.shape)
+
+    
+    '''
+    state=torch.randn(batch_size,seq_len,input_dim).to(torch.float32)
+    h_init=torch.zeros(1,batch_size,lstm_hidden_size)
+    c_init=torch.zeros(1,batch_size,lstm_hidden_size)
+    for i in range(state.shape[1]):
+        print(i)
+        n_state=state[:,i,:]
+        n_state=n_state.unsqueeze(1)
+        print(n_state.shape)
+        output,h_init,c_init=net.forward(n_state,h_init,c_init)
+        #print(output)
+        print(h_init.shape)
 
