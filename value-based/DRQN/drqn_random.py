@@ -16,8 +16,8 @@ class agent():
         scenario,
         seed=123,
         stack_size=1,
-        replay_capacity=4096,
-        batch_size=64,
+        replay_capacity=4096000,
+        batch_size=32,
         learning_rate=0.0001,
         gamma=0.99,
         update_horizon=1,
@@ -42,8 +42,8 @@ class agent():
         self.train_mode=train_mode
 
 
-        self.hidden_state=torch.zeros(1,1,lstm_size)
-        self.cell_state=torch.zeros(1,1,lstm_size)
+        self.hidden_state=torch.zeros(1,1,self.lstm_size)
+        self.cell_state=torch.zeros(1,1,self.lstm_size)
         self.lstm_history=lstm_history
 
         if min_replay_history<batch_size:
@@ -64,9 +64,10 @@ class agent():
         self.device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(self.device)
 
-        self.net=Network(self.env.observation_space.shape[0],self.env.action_space.n,lstm_size).to(self.device)
+        self.net=Network2(self.env.observation_space.shape[0],self.env.action_space.n,lstm_size).to(self.device)
         if self.train_mode:
-            self.memory=ReplayBuff2(replay_capacity,self.env.observation_space.shape[0],lstm_size)
+            #self.memory=ReplayBuff2(replay_capacity,self.env.observation_space.shape[0],self.env.action_space.n)
+            self.memory=ReplayBuff2(replay_capacity,self.env.observation_space.shape[0],self.lstm_size)
             self.target_net=Network2(self.env.observation_space.shape[0],self.env.action_space.n,lstm_size).to(self.device)
             self.target_net.load_state_dict(self.net.state_dict())
             self.target_net.eval()
@@ -91,21 +92,59 @@ class agent():
             return np.random.randint(self.action_num)
 
 
-    def store_transition(self,obs,action,reward,next_obs,done,h_state,c_state):
-        self.memory.append(obs,action,reward,next_obs,done,h_state,c_state)
+    def store_transition(self,obs,action,reward,next_obs,done):
+        self.memory.append(obs,action,reward,next_obs,done)
 
 
     def update(self):
+        #print('init update')
         self.optimizer.zero_grad()
         samples=self.memory.sample(self.batch_size,self.lstm_history)
         state=torch.from_numpy(samples["obs_batch"]).to(self.device)
-        action=torch.from_numpy(samples["act_batch"].reshape(-1,1)).to(self.device)
-        reward=torch.from_numpy(samples["rew_batch"].reshape(-1,1)).to(self.device)
+        action=torch.from_numpy(samples["act_batch"]).to(self.device)
+        reward=torch.from_numpy(samples["rew_batch"]).to(self.device)
         next_state=torch.from_numpy(samples["nx_obs_batch"]).to(self.device)
-        done=torch.from_numpy(samples["done_batch"].reshape(-1,1)).to(self.device)
-        hidden_batch=torch.from_numpy(samples["hidden_batch"].reshape(-1,1)).to(self.device)
-        cell_batch=torch.from_numpy(samples["cell_batch"].reshape(-1,1)).to(self.device)
+        done=torch.from_numpy(samples["done_batch"]).to(self.device)
+        #hidden_batch=torch.from_numpy(samples["hidden_batch"]).to(self.device)
+        #cell_batch=torch.from_numpy(samples["cell_batch"]).to(self.device)
+        '''
+        print(state.shape)
+        print(action.shape)
+        print(reward.shape)
+        print(next_state.shape)
+        print(done.shape)
+        print(hidden_batch.shape)
+        print(cell_batch.shape)
+        print(action.dtype)
+        '''
+        action=action.unsqueeze(2)
+        #hidden_batch=hidden_batch.unsqueeze(0)
+        #cell_batch=cell_batch.unsqueeze(0)
+        reward=reward.unsqueeze(2)
+        done=done.unsqueeze(2)
+
+        hidden_batch=torch.zeros(1,self.batch_size,self.lstm_size)
+        cell_batch=torch.zeros(1,self.batch_size,self.lstm_size)
+
         #write here
+        #print('to update')
+        q_value,_,_=self.net(state,hidden_batch,cell_batch)
+        #print(q_value.shape)
+        q_value=q_value.gather(2,action)
+        #print(q_value.shape)
+        with torch.no_grad():
+            next_q_value,_,_=self.target_net(state,hidden_batch,cell_batch)
+            next_q_value=next_q_value.max(dim=2,keepdim=True)[0]
+        #print(next_q_value.shape)
+        mask=1-done
+        target=(reward+self.gamma*next_q_value*mask).to(self.device)
+        #target=(reward*mask).to(self.device)
+        loss=self.loss_func(target,q_value)
+        loss.backward()
+        #print(loss.item())
+        clip_grad_norm_(self.net.parameters(),1.0,norm_type=1)
+        self.optimizer.step()
+        '''
 
         q_value=self.net(state,False).gather(1,action)
         next_q_value=self.target_net(
@@ -122,6 +161,7 @@ class agent():
         self.optimizer.step()
 
         return loss.item()
+        '''
 
     def target_update(self):
         self.target_net.load_state_dict(self.net.state_dict())
@@ -140,8 +180,8 @@ class agent():
                 next_state,reward,done,_=self.env.step(action)
                 next_state=next_state.astype(np.float32)
                 self.store_transition(state,action,reward,
-                        next_state,done,
-                        self.hidden_state.squeeze().numpy(),self.cell_state.squeeze().numpy())
+                        next_state,done)
+                        #self.hidden_state.squeeze().numpy(),self.cell_state.squeeze().numpy())
                 r_batch.append(reward)
                 state=next_state
                 if self.memory.size>=self.min_replay_history and step%self.update_period==0:
@@ -151,6 +191,10 @@ class agent():
                 if step % self.target_update_period==0:
                     self.target_update()
 
+            #self.hidden_state=torch.zeros(1,1,self.env.action_space.n)
+            #self.cell_state=torch.zeros(1,1,self.env.action_space.n)
+            self.hidden_state=torch.zeros(1,1,self.lstm_size)
+            self.cell_state=torch.zeros(1,1,self.lstm_size)
             print("episode: "+str(i)+" reward_sum: "+str(np.sum(r_batch)))
             del r_batch[:]
 
@@ -216,13 +260,13 @@ class agent():
 
 
 if __name__ =='__main__':
-    torch.set_num_threads(3)
+    torch.set_num_threads(1)
 
     seed=111
     np.random.seed(seed)
     torch.manual_seed(seed)
     train_agent=agent('CartPole-v0')
-    train_agent.train(100)
+    train_agent.train(300)
  
             
         

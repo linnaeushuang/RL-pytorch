@@ -114,7 +114,6 @@ class Network2(nn.Module):
     def __init__(self,input_dim,out_dim,lstm_size):
         super(Network2,self).__init__()
 
-        self.batch_size=batch_size
 
         self.fc1=nn.Linear(input_dim,128)
         self.fc2=nn.Linear(128,lstm_size)
@@ -134,22 +133,24 @@ class Network2(nn.Module):
         nn.init.constant_(self.fc1.bias.data,0.0)
         nn.init.xavier_uniform_(self.fc2.weight.data)
         nn.init.constant_(self.fc2.bias.data,0.0)
-        nn.init.xavier_uniform_(self.output_layer.weight.data)
-        nn.init.constant_(self.output_layer.bias.data,0.0)
+        #nn.init.xavier_uniform_(self.output_layer.weight.data)
+        #nn.init.constant_(self.output_layer.bias.data,0.0)
 
 
 
 
     def forward(self,inputs,h,c):
 
-        net=F.relu(self.fc1(inputs),inplace=True)
-        net=F.relu(self.fc2(net),inplace=True)
+        #net=F.relu(self.fc1(inputs),inplace=True)
+        #net=F.relu(self.fc2(net),inplace=True)
+        net=F.tanh(self.fc1(inputs))
+        net=F.tanh(self.fc2(net))
 
 
         net,(new_h,new_c)=self.rnn(net,(h,c))
 
         #print(net.shape) #[24,1,128]
-        net=net.squeeze()
+        #net=net.squeeze()
         #print(net.shape) #[24,128]
         out=self.output_layer(net)
         #print(out.shape) #[24,3]
@@ -164,7 +165,7 @@ if __name__ == '__main__':
     seq_len is length of episode
     if seq_len different,rnn output dim is different,so it is hard to input tensor to fc from rnn
     '''
-    batch_size=24
+    batch_size=5
     seq_len=4
     input_dim=2
     out_dim=3
@@ -183,8 +184,8 @@ if __name__ == '__main__':
     
     '''
     state=torch.randn(batch_size,seq_len,input_dim).to(torch.float32)
-    h_init=torch.zeros(1,batch_size,lstm_hidden_size)
-    c_init=torch.zeros(1,batch_size,lstm_hidden_size)
+    h_init=torch.zeros(1,batch_size,out_dim)
+    c_init=torch.zeros(1,batch_size,out_dim)
     for i in range(state.shape[1]):
         print(i)
         n_state=state[:,i,:]
@@ -193,4 +194,8 @@ if __name__ == '__main__':
         output,h_init,c_init=net.forward(n_state,h_init,c_init)
         #print(output)
         print(h_init.shape)
+    print('test')
+    test_out,test_h,test_c=net.forward(state,h_init,c_init)
+    print(test_out.shape)
+    print(test_out)
 
