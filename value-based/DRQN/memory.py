@@ -3,7 +3,6 @@ import numpy as np
 
 class ReplayBuff(object):
     '''replay buffer.
-    
     Attribute:
         max_size: max capacity of buffer
         observations: state buffer
@@ -104,33 +103,46 @@ class ReplayBuff2(object):
         self.ptr
 
 class ReplayBuff3(object):
-    def __init__(self,max_size,observation_shape):
+    def __init__(self,max_size,episode_length,observation_shape):
         self.max_size=max_size
-        self.observations=np.zeros([max_size,observation_shape],dtype=np.float32)
-        self.actions=np.zeros([max_size],dtype=np.long)
-        self.rewards=np.zeros([max_size],dtype=np.float32)
-        self.next_observations=np.zeros([max_size,observation_shape],dtype=np.float32)
-        self.terminals=np.zeros(max_size,dtype=np.float32)
+        self.observations=np.zeros([max_size,episode_length,observation_shape],dtype=np.float32)
+        self.actions=np.zeros([max_size,episode_length],dtype=np.long)
+        self.rewards=np.zeros([max_size,episode_length],dtype=np.float32)
+        self.next_observations=np.zeros([max_size,episode_length,observation_shape],dtype=np.float32)
+        self.terminals=np.zeros([max_size,episode_length],dtype=np.float32)
+        self.episode_end=np.zeros([max_size],dtype=np.long)
         self.size=0
         self.ptr=0
 
     def append(self,obs,action,reward,next_obs,terminal):
-        self.observations[self.ptr]=obs
-        self.actions[self.ptr]=action
-        self.rewards[self.ptr]=reward
-        self.next_observations[self.ptr]=next_obs
-        self.terminals[self.ptr]=terminal
+        self.observations[self.size,self.ptr]=obs
+        self.actions[self.size,self.ptr]=action
+        self.rewards[self.size,self.ptr]=reward
+        self.next_observations[self.size,self.ptr]=next_obs
+        self.terminals[self.size,self.ptr]=terminal
         self.ptr=(self.ptr+1)%self.max_size
+
+    def new_episode(self):
+        self.episode_end[self.size]=self.ptr
         self.size=min(self.size+1,self.max_size)
+        self.ptr=0
 
     def sample(self,batch_size,horizon):
    
-        batch_idxs=np.arange(self.size)
-        return dict(obs=self.observations[batch_idxs],
-                    action=self.actions[batch_idxs],
-                    reward=self.rewards[batch_idxs],
-                    next_obs=self.next_observations[batch_idxs],
-                    done=self.terminals[batch_idxs])
+        if batch_size > self.size:
+            batch_idxs=np.arange(self.size)
+        else:
+            batch_idxs=np.random.choice(self.size, size=batch_size,replace=False)
+        obs_batch=[self.observations[idx,:self.episode_end[idx]] for idx in batch_idxs]
+        act_batch=[self.actions[idx,:self.episode_end[idx]] for idx in batch_idxs]
+        rew_batch=[self.rewards[idx,:self.episode_end[idx]] for idx in batch_idxs]
+        nxobs_batch=[self.next_observations[idx,:self.episode_end[idx]] for idx in batch_idxs]
+        terminal=[self.terminals[idx,:self.episode_end[idx]] for idx in batch_idxs]
+        return dict(obs=obs_batch,
+                    action=act_batch,
+                    reward=rew_batch,
+                    next_obs=nxobs_batch,
+                    done=terminal)
  
     def __len__(self):
         return self.size

@@ -141,10 +141,10 @@ class Network2(nn.Module):
 
     def forward(self,inputs,h,c):
 
-        #net=F.relu(self.fc1(inputs),inplace=True)
-        #net=F.relu(self.fc2(net),inplace=True)
-        net=F.tanh(self.fc1(inputs))
-        net=F.tanh(self.fc2(net))
+        net=F.relu(self.fc1(inputs),inplace=True)
+        net=F.relu(self.fc2(net),inplace=True)
+        #net=F.tanh(self.fc1(inputs))
+        #net=F.tanh(self.fc2(net))
 
 
         net,(new_h,new_c)=self.rnn(net,(h,c))
