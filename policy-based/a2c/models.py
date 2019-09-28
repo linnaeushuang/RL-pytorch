@@ -28,3 +28,35 @@ class CriticNetwork(nn.Module):
         out=F.relu(self.fc2(out),inplace=True)
         out=self.fc3(out)
         return out
+
+
+
+class ActorNetwork_lstm(nn.Module):
+
+    def __init__(self,in_size,hidden_size,out_size):
+        super(ActorNetwork_lstm, self).__init__()
+        self.lstm = nn.LSTM(in_size, hidden_size, batch_first = True)
+        self.fc = nn.Linear(hidden_size,out_size)
+
+    def forward(self, x, hidden):
+        x, hidden = self.lstm(x, hidden)
+        x = self.fc(x)
+        #x = F.log_softmax(x,2)
+        x=F.softmax(x,2)
+        return x, hidden
+
+class CriticNetwork_lstm(nn.Module):
+
+    def __init__(self,in_size,hidden_size):
+        super(CriticNetwork_lstm, self).__init__()
+
+        self.lstm = nn.LSTM(in_size, hidden_size, batch_first = True)
+        self.fc = nn.Linear(hidden_size,1)
+
+    def forward(self,x, hidden):
+
+        x, hidden = self.lstm(x, hidden)
+        x = self.fc(x)
+        return x, hidden
+
+
